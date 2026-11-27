@@ -1278,6 +1278,13 @@ function pickQuestion(mode) {
 }
 window.openQuiz = function(mode = 'manual', orbRef = null) {
   if (game.over || game.paused) return;
+  if (mode === 'orb') {
+    const enemyCore = game.myTeam === 'blue' ? game.cores.red : game.cores.blue;
+    if (enemyCore && enemyCore.hp > 0) {
+      showBanner('🔒 Hancurkan Teras Lawan dahulu sebelum menawan Capture Point!', '#facc15');
+      return;
+    }
+  }
   if (mode === 'remediate' && game.missedQueue.length === 0) { showBanner('🌟 Tiada soalan salah untuk diulang kaji!', '#4ade80'); return; }
   const shieldedBoss = game.zombies.find(z => z.isBoss && z.shielded);
   if (mode === 'manual' && shieldedBoss) mode = 'boss_shield';
@@ -1812,6 +1819,15 @@ function update(dt = 1) {
     if (consumed) { game.bullets.splice(i, 1); continue; }
     for (const dom of game.dominators) {
       if (dom.owner !== b.team && Math.hypot(dom.x - b.x, dom.y - b.y) < 42 + b.r) {
+        const targetCoreForTeam = b.team === 'blue' ? game.cores.red : game.cores.blue;
+        if (targetCoreForTeam && targetCoreForTeam.hp > 0) {
+          if (b.owner && b.owner.isPlayer && Math.random() < 0.25) {
+            const coreName = b.team === 'blue' ? 'TERAS MERAH' : 'TERAS BIRU';
+            addFloatText(dom.x, dom.y - 45, `🔒 HANCURKAN ${coreName} DAHULU!`, '#facc15');
+          }
+          if (!b.pierce) { consumed = true; break; }
+          continue;
+        }
         dom.hp -= b.dmg;
         if (dom.hp <= 0) {
           if (b.team === game.myTeam && game.orbQuizLock && b.owner && b.owner.isPlayer) { dom.hp = 1; openQuiz('orb', dom); }
@@ -1966,11 +1982,19 @@ function draw() {
   ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 6; ctx.strokeRect(0, 0, WORLD, WORLD);
   drawTeamCore(game.cores.blue, 'TERAS BIRU', '#38bdf8'); drawTeamCore(game.cores.red, 'TERAS MERAH', '#fb7185');
   game.dominators.forEach((dom, idx) => {
-    const col = dom.owner === 'blue' ? '#38bdf8' : dom.owner === 'red' ? '#fb7185' : '#94a3b8';
+    const myEnemyCore = game.myTeam === 'blue' ? game.cores.red : game.cores.blue;
+    const isLockedByCore = dom.owner === 'neutral' && myEnemyCore && myEnemyCore.hp > 0;
+    const col = dom.owner === 'blue' ? '#38bdf8' : dom.owner === 'red' ? '#fb7185' : (isLockedByCore ? '#64748b' : '#94a3b8');
     const orbPulse = 44 + Math.sin(game.animTime + idx) * 1.8;
-    ctx.beginPath(); ctx.arc(dom.x, dom.y, orbPulse, 0, Math.PI * 2); ctx.fillStyle = '#1e293b'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.stroke();
-    ctx.fillStyle = col; ctx.font = 'bold 12px sans-serif'; ctx.fillText(`ORB ${dom.name}`, dom.x, dom.y - 5);
-    ctx.font = '10px sans-serif'; ctx.fillText(dom.owner === game.myTeam ? 'DIKAWAL' : `${Math.round(dom.displayHp ?? dom.hp)} HP`, dom.x, dom.y + 11);
+    ctx.beginPath(); ctx.arc(dom.x, dom.y, orbPulse, 0, Math.PI * 2); ctx.fillStyle = '#1e293b'; ctx.fill();
+    if (isLockedByCore) ctx.setLineDash([7, 5]);
+    ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = col; ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(isLockedByCore ? `🔒 ORB ${dom.name}` : `ORB ${dom.name}`, dom.x, dom.y - 5);
+    ctx.font = '10px sans-serif';
+    const subStatus = dom.owner === game.myTeam ? 'DIKAWAL' : (isLockedByCore ? 'TERKUNCI' : `${Math.round(dom.displayHp ?? dom.hp)} HP`);
+    ctx.fillText(subStatus, dom.x, dom.y + 11);
   });
   game.powerups.forEach(pu => {
     const sc = 1 + Math.sin(game.animTime * 2 + (pu.pulse || 0)) * 0.08;
