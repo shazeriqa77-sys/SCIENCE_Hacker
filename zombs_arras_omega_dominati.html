@@ -349,7 +349,7 @@
     <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; background:#1e293b; padding:8px 10px; border-radius:10px; border:1px solid #334155;">
       <button type="button" class="util-btn on" onclick="googleSignIn()">🔐 Sign In dengan Google</button>
       <button type="button" class="util-btn" onclick="quickSignIn()">🪪 Sign In ID Murid</button>
-      <a href="login.html?next=zombs_arras_omega_domination.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
+      <a href="login.html?next=zombs_arras_omega_dominati.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
       <span id="authStatusText" style="font-size:11px; color:#86efac; font-weight:700;">🟢 Mod Arena Sedia (Boleh terus main!)</span>
     </div>
 
@@ -1165,6 +1165,11 @@ function applyCleanResetState(profileOverride = null, roundNum = 1, syncCloud = 
         setTimeout(() => { netState.isResettingRoom = false; }, 1200);
       });
   }
+
+  setBuildMode(0);
+  updateHud();
+  syncPlayerMetaToRoom();
+}
 
 function resetGame(profileOverride = null, roundNum = null) {
   applyCleanResetState(profileOverride, roundNum || netState.roundNumber || 1, false, false);
@@ -2037,7 +2042,7 @@ function updateHud() {
   updateRoomLeaderboard();
 }
 const netState = {
-  roomKey: 'GLOBAL_ASIA_GLOBAL01', roomLabel: 'GLOBAL_ASIA', roundNumber: 1, lastRoundResetTs: 0, lastRecordedWinRound: 0,
+  roomKey: 'GLOBAL_ASIA_GLOBAL01', roomLabel: 'GLOBAL_ASIA', roundNumber: 1, lastRoundResetTs: 0, lastRecordedWinRound: 0, isResettingRoom: false,
   teamWins: { blue: 0, red: 0 }, playerId: '', myRef: null, serverOffset: 0, lastWaveSlot: -1, lastShotTs: 0, lastSentShotTs: 0,
   lastChatMsg: '', lastChatTs: 0, lastPingTs: 0, lastCustomSyncTs: 0, lastSentX: -9999, lastSentY: -9999, lastSentAngle: -9999,
   lastSentClass: '', lastSentLvl: 0, remotePlayers: {}, unsubs: [], tickTimer: null
@@ -2122,8 +2127,8 @@ function initGlobalMultiplayer(serverRegion, roomCode) {
         const cR = dVal.core_red && typeof dVal.core_red.hp === 'number' ? dVal.core_red.hp : 100;
         const orbs = [dVal[0], dVal[1], dVal[2], dVal[3]].filter(Boolean);
         if ((cR <= 0 && orbs.length === 4 && orbs.every(o => o.owner === 'blue')) || (cB <= 0 && orbs.length === 4 && orbs.every(o => o.owner === 'red'))) {
-          const freshRound = (netState.roundNumber || 1) + 1; netState.roundNumber = freshRound; netState.lastRoundResetTs = Date.now();
-          resetFirebaseRoomToRound(freshRound, netState.lastRoundResetTs); resetGame(null, freshRound);
+          const freshRound = (netState.roundNumber || 1) + 1;
+          applyCleanResetState(null, freshRound, true, false);
         }
       }
     } catch (err) {}
