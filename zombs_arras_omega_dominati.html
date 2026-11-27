@@ -1136,32 +1136,35 @@ function applyCleanResetState(profileOverride = null, roundNum = 1, syncCloud = 
   syncDeterministicArena(`${rKey}_R${activeRound}`);
 
   if (syncCloud && window.fbReady && netState.roomKey) {
+    netState.isResettingRoom = true;
     const basePath = `omega_dom_v2/${netState.roomKey}`;
+    const ops = [
+      window.fbRemove(window.fbRef(window.fbDb, `${basePath}/structures`)),
+      window.fbSet(window.fbRef(window.fbDb, `${basePath}/dominators`), {
+        0: { id: 0, name: 'ALPHA', owner: 'neutral', hp: 850, maxHp: 850 },
+        1: { id: 1, name: 'BETA', owner: 'neutral', hp: 850, maxHp: 850 },
+        2: { id: 2, name: 'GAMMA', owner: 'neutral', hp: 850, maxHp: 850 },
+        3: { id: 3, name: 'DELTA', owner: 'neutral', hp: 850, maxHp: 850 },
+        core_blue: { id: 99, owner: 'core_blue', hp: 100, maxHp: 100 },
+        core_red: { id: 98, owner: 'core_red', hp: 100, maxHp: 100 }
+      }),
+      window.fbSet(window.fbRef(window.fbDb, `${basePath}/roundState`), {
+        round: activeRound,
+        resetTs: nowTs,
+        triggeredBy: game.studentName || 'Ejen Ilmu'
+      })
+    ];
     if (resetSeries) {
-      window.fbSet(window.fbRef(window.fbDb, `${basePath}/teamWins`), {
+      ops.push(window.fbSet(window.fbRef(window.fbDb, `${basePath}/teamWins`), {
         blue: 0, red: 0, lastRound: 0, ts: nowTs
-      }).catch(() => {});
+      }));
     }
-    window.fbRemove(window.fbRef(window.fbDb, `${basePath}/structures`)).catch(() => {});
-    window.fbSet(window.fbRef(window.fbDb, `${basePath}/dominators`), {
-      0: { id: 0, name: 'ALPHA', owner: 'neutral', hp: 850, maxHp: 850 },
-      1: { id: 1, name: 'BETA', owner: 'neutral', hp: 850, maxHp: 850 },
-      2: { id: 2, name: 'GAMMA', owner: 'neutral', hp: 850, maxHp: 850 },
-      3: { id: 3, name: 'DELTA', owner: 'neutral', hp: 850, maxHp: 850 },
-      core_blue: { id: 99, owner: 'core_blue', hp: 100, maxHp: 100 },
-      core_red: { id: 98, owner: 'core_red', hp: 100, maxHp: 100 }
-    }).catch(() => {});
-    window.fbSet(window.fbRef(window.fbDb, `${basePath}/roundState`), {
-      round: activeRound,
-      resetTs: nowTs,
-      triggeredBy: game.studentName || 'Ejen Ilmu'
-    }).catch(() => {});
+    Promise.all(ops)
+      .catch(() => {})
+      .finally(() => {
+        setTimeout(() => { netState.isResettingRoom = false; }, 1200);
+      });
   }
-
-  setBuildMode(0);
-  updateHud();
-  syncPlayerMetaToRoom();
-}
 
 function resetGame(profileOverride = null, roundNum = null) {
   applyCleanResetState(profileOverride, roundNum || netState.roundNumber || 1, false, false);
@@ -2164,18 +2167,29 @@ function initGlobalMultiplayer(serverRegion, roomCode) {
       game.buildings = game.buildings.filter(b => !b.syncId || remoteIds.has(b.syncId));
     }));
     netState.unsubs.push(window.fbOnValue(window.fbRef(window.fbDb, `${basePath}/dominators`), snap => {
+      if (netState.isResettingRoom) return;
       const val = snap.val(); if (!val || !game.dominators) return;
       Object.values(val).forEach(d => {
         if (!d || typeof d.id !== 'number') return;
         if (d.owner === 'core_blue' && typeof d.hp === 'number') { game.cores.blue.hp = d.hp; checkCoreEliminationVictory(); return; }
         if (d.owner === 'core_red' && typeof d.hp === 'number') { game.cores.red.hp = d.hp; checkCoreEliminationVictory(); return; }
         const localDom = game.dominators[d.id];
-        if (localDom) { localDom.owner = d.owner || 'neutral'; localDom.hp = typeof d.hp === 'number' ? d.hp : localDom.maxHp; checkDominationVictory(); }
+        if (localDom) {
+          localDom.owner = d.owner || 'neutral';
+          localDom.hp = typeof d.hp === 'number' ? d.hp : localDom.maxHp;
+        }
       });
+      checkDominationVictory();
     }));
+
     netState.unsubs.push(window.fbOnValue(window.fbRef(window.fbDb, `${basePath}/teamWins`), snap => {
+      if (netState.isResettingRoom) return;
       const tw = snap.val(); if (!tw) return;
-      netState.teamWins = { blue: typeof tw.blue === 'number' ? tw.blue : 0, red: typeof tw.red === 'number' ? tw.red : 0 }; updateHud();
+      netState.teamWins = {
+        blue: typeof tw.blue === 'number' ? tw.blue : 0,
+        red: typeof tw.red === 'number' ? tw.red : 0
+      };
+      updateHud();
     }));
     netState.unsubs.push(window.fbOnValue(window.fbRef(window.fbDb, `${basePath}/roundState`), snap => {
       const rs = snap.val();
