@@ -349,7 +349,7 @@
     <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; background:#1e293b; padding:8px 10px; border-radius:10px; border:1px solid #334155;">
       <button type="button" class="util-btn on" onclick="googleSignIn()">🔐 Sign In dengan Google</button>
       <button type="button" class="util-btn" onclick="quickSignIn()">🪪 Sign In ID Murid</button>
-      <a href="login.html?next=zombs_arras_omega_dominati.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
+      <a href="login.html?next=zombs_arras_omega_domination.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
       <span id="authStatusText" style="font-size:11px; color:#86efac; font-weight:700;">🟢 Mod Arena Sedia (Boleh terus main!)</span>
     </div>
 
@@ -1000,6 +1000,7 @@ function applyCleanResetState(profileOverride = null, roundNum = 1, syncCloud = 
   game = {
     over: false,
     paused: false,
+    coreDestroyedAnnounced: null,
     round: activeRound,
     soundOn: prevSound,
     bgmOn: prevBgm,
@@ -1679,13 +1680,19 @@ function update(dt = 1) {
       if (target) { t.angle = lerpAngle(t.angle, Math.atan2(target.y - t.y, target.x - t.x), smoothFactor(0.22, dt)); fireTank(t, false); }
     } else if (t.isBot) {
       const targetEnemyCore = t.team === 'blue' ? game.cores.red : game.cores.blue;
-      let goal = findNearestHostile(t.x, t.y, t.team, 440) || game.dominators.find(d => d.owner !== t.team) || targetEnemyCore;
+      const enemyCoreAlive = targetEnemyCore.hp > 0;
+      const uncapturedOrb = game.dominators.find(d => d.owner !== t.team);
+      const closeThreat = findNearestHostile(t.x, t.y, t.team, 240);
+      let goal = enemyCoreAlive
+        ? (closeThreat || targetEnemyCore)
+        : (uncapturedOrb || closeThreat || targetEnemyCore);
+      const stopDist = (goal === targetEnemyCore) ? 145 : 165;
       const dist = Math.hypot(goal.x - t.x, goal.y - t.y);
       t.angle = lerpAngle(t.angle, Math.atan2(goal.y - t.y, goal.x - t.x), smoothFactor(0.18, dt));
-      const tvx = dist > 175 ? Math.cos(t.angle) * t.speed : 0, tvy = dist > 175 ? Math.sin(t.angle) * t.speed : 0;
+      const tvx = dist > stopDist ? Math.cos(t.angle) * t.speed : 0, tvy = dist > stopDist ? Math.sin(t.angle) * t.speed : 0;
       t.vx = lerp(t.vx || 0, tvx, moveSmooth); t.vy = lerp(t.vy || 0, tvy, moveSmooth);
       t.x = Math.max(25, Math.min(WORLD - 25, t.x + t.vx * dt)); t.y = Math.max(25, Math.min(WORLD - 25, t.y + t.vy * dt));
-      if (dist < 420) fireTank(t, false);
+      if (dist < 430) fireTank(t, false);
     }
   });
   const remotePosLerp = smoothFactor(0.24, dt), remoteAngLerp = smoothFactor(0.28, dt);
@@ -1834,7 +1841,10 @@ function findNearestHostile(x, y, friendlyTeam, maxRange) {
   for (const z of game.zombies) { const d = Math.hypot(z.x - x, z.y - y); if (d < bestDist) { bestDist = d; best = z; } }
   for (const t of game.tanks) { if (t.hp > 0 && t.team !== friendlyTeam) { const d = Math.hypot(t.x - x, t.y - y); if (d < bestDist) { bestDist = d; best = t; } } }
   Object.values(netState.remotePlayers || {}).forEach(p => { if (p && (p.team || 'blue') !== friendlyTeam && typeof p.x === 'number') { const d = Math.hypot(p.x - x, p.y - y); if (d < bestDist) { bestDist = d; best = p; } } });
-  for (const dom of game.dominators) { if (dom.owner !== friendlyTeam) { const d = Math.hypot(dom.x - x, dom.y - y); if (d < bestDist) { bestDist = d; best = dom; } } }
+  const enemyCore = friendlyTeam === 'blue' ? game.cores.red : game.cores.blue;
+  if (enemyCore && enemyCore.hp <= 0) {
+    for (const dom of game.dominators) { if (dom.owner !== friendlyTeam) { const d = Math.hypot(dom.x - x, dom.y - y); if (d < bestDist) { bestDist = d; best = dom; } } }
+  }
   return best;
 }
 function recordTeamRoundWin(winTeam) {
@@ -1853,9 +1863,21 @@ function evaluateFullDominationAndCoreVictory(sourceTrigger = 'combat') {
   const redCoreDestroyed  = game.cores.red.hp <= 0;
   const blueCoreDestroyed = game.cores.blue.hp <= 0;
 
+  if (sourceTrigger === 'core' && !game.coreDestroyedAnnounced) {
+    if (redCoreDestroyed && !blueCapturedAll) {
+      game.coreDestroyedAnnounced = 'red';
+      playExplosionSfx(true);
+      showBanner('💥 TERAS MERAH HANCUR! Sekarang tawan semua 4 Capture Point untuk menang!', '#38bdf8');
+    } else if (blueCoreDestroyed && !redCapturedAll) {
+      game.coreDestroyedAnnounced = 'blue';
+      playExplosionSfx(true);
+      showBanner('💥 TERAS BIRU HANCUR! Sekarang tawan semua 4 Capture Point untuk menang!', '#fb7185');
+    }
+  }
+
   let winTeam = null;
-  if (redCoreDestroyed || blueCapturedAll) winTeam = 'blue';
-  else if (blueCoreDestroyed || redCapturedAll) winTeam = 'red';
+  if (redCoreDestroyed && blueCapturedAll) winTeam = 'blue';
+  else if (blueCoreDestroyed && redCapturedAll) winTeam = 'red';
 
   if (winTeam) {
     game.over = true;
@@ -1863,18 +1885,14 @@ function evaluateFullDominationAndCoreVictory(sourceTrigger = 'combat') {
     const isMyWin = winTeam === game.myTeam;
     if (isMyWin) playOrbCaptureSfx(); else playExplosionSfx(true);
     const winLabel = winTeam === 'red' ? 'MERAH' : 'BIRU';
-    const reasonTxt = (winTeam === 'blue' ? redCoreDestroyed : blueCoreDestroyed)
-      ? 'Teras lawan berjaya dimusnahkan!'
-      : 'Semua 4 Capture Point berjaya ditawan!';
+    const reasonTxt = 'Teras lawan telah dihancurkan & kesemua 4 Capture Point berjaya ditawan!';
     document.getElementById('endTitle').textContent = isMyWin
-      ? `🏆 KEMENANGAN PASUKAN ${winLabel}! ${reasonTxt}`
+      ? `🏆 KEMENANGAN MUTLAK PASUKAN ${winLabel}! ${reasonTxt}`
       : `⚔️ PASUKAN ${winLabel} MENANG! ${reasonTxt}`;
     document.getElementById('endTitle').style.color = isMyWin ? '#4ade80' : '#fb7185';
     showReportModal(true);
     return;
   }
-
-
 }
 function checkDominationVictory() { evaluateFullDominationAndCoreVictory('dom'); }
 function checkCoreEliminationVictory() { evaluateFullDominationAndCoreVictory('core'); }
@@ -1900,14 +1918,16 @@ function drawSpeechBubble(x, y, text) {
   ctx.restore();
 }
 function drawTeamCore(coreObj, label, color) {
-  const pulse = 40 + Math.sin(game.animTime) * 2.5;
+  const isDestroyed = coreObj.hp <= 0;
+  const pulse = isDestroyed ? 38 : (40 + Math.sin(game.animTime) * 2.5);
   ctx.beginPath(); ctx.arc(coreObj.x, coreObj.y, pulse, 0, Math.PI * 2);
-  ctx.fillStyle = coreObj.team === 'red' ? 'rgba(244, 63, 94, 0.18)' : 'rgba(56, 189, 248, 0.18)'; ctx.fill();
-  ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.stroke();
+  ctx.fillStyle = isDestroyed ? 'rgba(100, 116, 139, 0.22)' : (coreObj.team === 'red' ? 'rgba(244, 63, 94, 0.18)' : 'rgba(56, 189, 248, 0.18)'); ctx.fill();
+  ctx.strokeStyle = isDestroyed ? '#64748b' : color; ctx.lineWidth = 4; ctx.stroke();
   ctx.font = '28px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(coreObj.team === 'red' ? '🔥' : '⚜️', coreObj.x, coreObj.y);
-  ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = color; ctx.fillText(label, coreObj.x, coreObj.y - 50);
-  drawHpBar(coreObj.x, coreObj.y + 46, 74, coreObj.displayHp ?? coreObj.hp, coreObj.maxHp, color);
+  ctx.fillText(isDestroyed ? '💥' : (coreObj.team === 'red' ? '🔥' : '⚜️'), coreObj.x, coreObj.y);
+  ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = isDestroyed ? '#94a3b8' : color;
+  ctx.fillText(isDestroyed ? `${label} (HANCUR)` : label, coreObj.x, coreObj.y - 50);
+  drawHpBar(coreObj.x, coreObj.y + 46, 74, coreObj.displayHp ?? coreObj.hp, coreObj.maxHp, isDestroyed ? '#64748b' : color);
 }
 function drawRemotePlayers(remoteCtx) {
   const nowPerf = performance.now();
