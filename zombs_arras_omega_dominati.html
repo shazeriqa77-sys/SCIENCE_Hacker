@@ -349,7 +349,7 @@
     <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; background:#1e293b; padding:8px 10px; border-radius:10px; border:1px solid #334155;">
       <button type="button" class="util-btn on" onclick="googleSignIn()">🔐 Sign In dengan Google</button>
       <button type="button" class="util-btn" onclick="quickSignIn()">🪪 Sign In ID Murid</button>
-      <a href="login.html?next=zombs_arras_omega_domination.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
+      <a href="login.html?next=zombs_arras_omega_dominati.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
       <span id="authStatusText" style="font-size:11px; color:#86efac; font-weight:700;">🟢 Mod Arena Sedia (Boleh terus main!)</span>
     </div>
 
@@ -805,6 +805,15 @@ const camState = { x: BLUE_CORE_POS.x - canvas.width / 2, y: BLUE_CORE_POS.y - c
 const keys = {};
 const mouse = { x: canvas.width / 2, y: canvas.height / 2, down: false };
 let bannerTimeout = null, lbCollapsed = false, autoResetTimer = null, autoResetSecs = 12, nextRoundTeam = 'blue';
+let totalSessionsPlayed = 1;
+try {
+  totalSessionsPlayed = Math.max(1, parseInt(localStorage.getItem('omega_edu_play_count') || '1', 10));
+} catch (err) {}
+function recordPlayAttempt(increment = true) {
+  if (increment) totalSessionsPlayed++;
+  try { localStorage.setItem('omega_edu_play_count', String(totalSessionsPlayed)); } catch (err) {}
+  return totalSessionsPlayed;
+}
 
 function showBanner(msg, color = '#fef08a') {
   const el = document.getElementById('eventBanner');
@@ -909,6 +918,8 @@ async function resolvePlayerTeam(teamPref, serverRegion, roomCode) {
   return Math.random() < 0.5 ? 'blue' : 'red';
 }
 window.startMission = async function() {
+  if (window._hasStartedOnce) recordPlayAttempt(true);
+  window._hasStartedOnce = true;
   const sName = document.getElementById('inpStudentName').value.trim() || 'Ejen Ilmu';
   const sClass = document.getElementById('inpStudentClass').value.trim() || 'Kelas Bestari';
   const teamPref = document.getElementById('inpTeamPref').value;
@@ -924,8 +935,13 @@ window.startMission = async function() {
   resetGame({ sName, sClass, teamPref, assignedTeam, auraBadge, lvlFilter, langMode, serverRegion, roomCode }, netState.roundNumber || 1);
   initGlobalMultiplayer(serverRegion, roomCode);
   playOrbCaptureSfx();
+  const playNum = Math.max(totalSessionsPlayed, game.round || 1);
   const teamLabel = assignedTeam === 'red' ? '🔴 PASUKAN MERAH (Kubu Timur)' : '🔵 PASUKAN BIRU (Kubu Barat)';
-  showBanner(`🚀 ${sName} menyertai ${teamLabel}!`, assignedTeam === 'red' ? '#fb7185' : '#38bdf8');
+  if (playNum >= 3) {
+    showBanner(`🔥 MOD ZOMBS TAHAP SUSAH (MAIN KE-${playNum}) AKTIF! ${sName} menyertai ${teamLabel}!`, '#fb7185');
+  } else {
+    showBanner(`🚀 ${sName} menyertai ${teamLabel}! (Main ke-${playNum})`, assignedTeam === 'red' ? '#fb7185' : '#38bdf8');
+  }
 };
 function getMyCore() { return game.cores[game.myTeam || 'blue']; }
 window.selectNextRoundTeam = function(teamKey) {
@@ -1123,7 +1139,9 @@ function applyCleanResetState(profileOverride = null, roundNum = 1, syncCloud = 
   const teamTag = chosenTeam === 'red' ? '🔴 MERAH' : '🔵 BIRU';
   const signTag = (window.signedInAccount && window.signedInAccount.idTag) ? ` [${window.signedInAccount.idTag}]` : '';
   const infoEl = document.getElementById('hudStudentInfo');
-  if (infoEl) infoEl.textContent = `${teamTag} • ${game.studentName}${signTag} (${game.studentClass}) • Pusingan #${activeRound}`;
+  const playNum = Math.max(totalSessionsPlayed || 1, activeRound);
+  const diffBadge = playNum >= 3 ? ' • 💀 ZOMBS SUSAH' : ' • 🧟 ZOMBS BIASA';
+  if (infoEl) infoEl.textContent = `${teamTag} • ${game.studentName}${signTag} (${game.studentClass}) • Pusingan #${activeRound}${diffBadge}`;
 
   netState.lastSentX = -9999;
   netState.lastSentY = -9999;
@@ -1178,6 +1196,7 @@ function resetGame(profileOverride = null, roundNum = null) {
 
 window.triggerNewRound = function() {
   const nextRound = (netState.roundNumber || 1) + 1;
+  const playNum = recordPlayAttempt(true);
   const chosenTeam = nextRoundTeam || game.myTeam || 'blue';
   applyCleanResetState({
     sName: game.studentName || 'Ejen Ilmu',
@@ -1191,7 +1210,11 @@ window.triggerNewRound = function() {
     roomCode: game.roomCode || 'GLOBAL01'
   }, nextRound, true, false);
   playOrbCaptureSfx();
-  showBanner(`🔄 PUSINGAN #${nextRound} BERMULA! Peta & orb telah di-reset.`, '#4ade80');
+  if (playNum >= 3) {
+    showBanner(`🔥 PUSINGAN #${nextRound} (MAIN KE-${playNum}): ZOMBS TAHAP SUSAH AKTIF!`, '#fb7185');
+  } else {
+    showBanner(`🔄 PUSINGAN #${nextRound} BERMULA! Peta & orb telah di-reset.`, '#4ade80');
+  }
 };
 
 window.resetAllPlayerData = function(skipConfirm = false) {
@@ -1236,17 +1259,35 @@ function spawnPowerup(kind = null) {
   while (Math.hypot(x - BLUE_CORE_POS.x, y - BLUE_CORE_POS.y) < 180 || Math.hypot(x - RED_CORE_POS.x, y - RED_CORE_POS.y) < 180);
   game.powerups.push({ kind: chosen, x, y, r: 19, pulse: Math.random() * Math.PI * 2 });
 }
+function getZombsDifficulty() {
+  const playCount = Math.max(totalSessionsPlayed || 1, (game && game.round) || 1);
+  const isHard = playCount >= 3;
+  const extraTier = isHard ? (playCount - 2) : 0; // 1 on 3rd play, 2 on 4th play, etc.
+  return {
+    playCount,
+    isHard,
+    hpMult: isHard ? (1.75 + extraTier * 0.25) : 1.0,
+    spdMult: isHard ? Math.min(1.65, 1.25 + extraTier * 0.08) : 1.0,
+    dmgMult: isHard ? (1.6 + extraTier * 0.2) : 1.0,
+    bossChance: isHard ? 0.35 : 0.18,
+    spawnCount: isHard ? (playCount >= 5 ? 3 : 2) : 1
+  };
+}
 window.spawnTestZombie = function(forceBoss = false) {
   if (!game || game.over) return;
   const p1 = game.tanks && game.tanks[0], baseX = p1 ? p1.x : WORLD / 2, baseY = p1 ? p1.y : WORLD / 2;
   const ang = Math.random() * Math.PI * 2, dist = 220 + Math.random() * 120;
   const zx = Math.max(40, Math.min(WORLD - 40, baseX + Math.cos(ang) * dist));
   const zy = Math.max(40, Math.min(WORLD - 40, baseY + Math.sin(ang) * dist));
-  const isBoss = forceBoss || (Math.random() < 0.25 && !game.zombies.some(z => z.isBoss));
-  const hp = Math.round((isBoss ? 240 : 55) * (1 + ((game.nightCount || 1) - 1) * 0.25));
-  game.zombies.push({ x: zx, y: zy, r: isBoss ? 25 : 15, hp, displayHp: hp, maxHp: hp, speed: isBoss ? 1.15 : 1.75, dmg: isBoss ? 15 : 6, isBoss, shielded: isBoss, slowTimer: 0, atkCd: 0 });
-  spawnParticles(zx, zy, isBoss ? '#facc15' : '#4ade80', 12);
-  addFloatText(zx, zy - 24, isBoss ? '👹 BOSS UJIAN [Z]!' : '🧟 ZOMBI UJIAN [Z]!', isBoss ? '#facc15' : '#4ade80');
+  const zDiff = getZombsDifficulty();
+  const isBoss = forceBoss || (Math.random() < (zDiff.isHard ? 0.38 : 0.25) && !game.zombies.some(z => z.isBoss));
+  const hp = Math.round((isBoss ? 240 : 55) * (1 + ((game.nightCount || 1) - 1) * 0.25) * zDiff.hpMult);
+  const spd = Number(((isBoss ? 1.15 : 1.75) * zDiff.spdMult).toFixed(2));
+  const dmg = Math.round((isBoss ? 15 : 6) * zDiff.dmgMult);
+  game.zombies.push({ x: zx, y: zy, r: isBoss ? 26 : 16, hp, displayHp: hp, maxHp: hp, speed: spd, dmg, isBoss, isHard: zDiff.isHard, shielded: isBoss, slowTimer: 0, atkCd: 0 });
+  spawnParticles(zx, zy, zDiff.isHard ? '#fb7185' : (isBoss ? '#facc15' : '#4ade80'), 14);
+  const tag = zDiff.isHard ? (isBoss ? '👹 BOSS SUSAH [Z]!' : '💀 ZOMBI SUSAH [Z]!') : (isBoss ? '👹 BOSS UJIAN [Z]!' : '🧟 ZOMBI UJIAN [Z]!');
+  addFloatText(zx, zy - 24, tag, zDiff.isHard ? '#fb7185' : (isBoss ? '#facc15' : '#4ade80'));
 };
 window.upgradeStat = function(idx) {
   if (!game || game.over || game.upgradePts <= 0 || idx < 0 || idx > 3 || game.stats[idx] >= 5) return;
@@ -1632,12 +1673,17 @@ function update(dt = 1) {
     const waveSlot = Math.floor(totalSec / 3);
     if (netState.lastWaveSlot !== waveSlot) {
       netState.lastWaveSlot = waveSlot;
+      const zDiff = getZombsDifficulty();
       const rng = createSeededRng(hashRoomSeed(`${netState.roomKey}_R${game.round}_${waveSlot}`));
-      const side = Math.floor(rng() * 2), zx = 350 + rng() * (WORLD - 700), zy = side === 0 ? 45 : WORLD - 45;
-      const isBoss = rng() < 0.18 && !game.zombies.some(z => z.isBoss);
-      const hp = Math.round((isBoss ? 240 : 55) * (1 + (game.nightCount - 1) * 0.25));
-      game.zombies.push({ x: zx, y: zy, r: isBoss ? 25 : 15, hp, displayHp: hp, maxHp: hp, speed: isBoss ? 1.15 : 1.75, dmg: isBoss ? 15 : 6, isBoss, shielded: isBoss, slowTimer: 0, atkCd: 0 });
-      if (isBoss) showBanner('👹 BOSS BERPERISAI MUNCUL! Tekan [Q] untuk memecahkan perisainya!', '#fb7185');
+      for (let sc = 0; sc < zDiff.spawnCount; sc++) {
+        const side = Math.floor(rng() * 2), zx = 350 + rng() * (WORLD - 700), zy = side === 0 ? 45 : WORLD - 45;
+        const isBoss = rng() < zDiff.bossChance && !game.zombies.some(z => z.isBoss);
+        const hp = Math.round((isBoss ? 240 : 55) * (1 + (game.nightCount - 1) * 0.25) * zDiff.hpMult);
+        const spd = Number(((isBoss ? 1.15 : 1.75) * zDiff.spdMult).toFixed(2));
+        const dmg = Math.round((isBoss ? 15 : 6) * zDiff.dmgMult);
+        game.zombies.push({ x: zx, y: zy, r: isBoss ? 26 : 16, hp, displayHp: hp, maxHp: hp, speed: spd, dmg, isBoss, isHard: zDiff.isHard, shielded: isBoss, slowTimer: 0, atkCd: 0 });
+        if (isBoss) showBanner(zDiff.isHard ? '👹🔥 BOSS TAHAP SUSAH MUNCUL! Tekan [Q] pecahkan perisai!' : '👹 BOSS BERPERISAI MUNCUL! Tekan [Q] untuk memecahkan perisainya!', '#fb7185');
+      }
     }
   }
   game.mineTimer += dt;
@@ -1732,15 +1778,61 @@ function update(dt = 1) {
     }
   });
   game.resources.forEach(res => { res.hitScale = lerp(res.hitScale || 1, 1, smoothFactor(0.22, dt)); });
+  const anyCoreDestroyed = game.cores.blue.hp <= 0 || game.cores.red.hp <= 0;
+  // Jika mana-mana Teras sudah rosak, Zombs pemburu juga muncul sedikit demi sedikit walaupun siang!
+  if (anyCoreDestroyed && !game.isNight && game.zombies.length < 10 && Math.random() < 0.012 * dt) {
+    const zDiff = getZombsDifficulty();
+    const angSpawn = Math.random() * Math.PI * 2;
+    const zx = Math.max(60, Math.min(WORLD - 60, WORLD / 2 + Math.cos(angSpawn) * 850));
+    const zy = Math.max(60, Math.min(WORLD - 60, WORLD / 2 + Math.sin(angSpawn) * 850));
+    const hp = Math.round(65 * zDiff.hpMult);
+    const spd = Number((1.95 * zDiff.spdMult).toFixed(2));
+    const dmg = Math.round(8 * zDiff.dmgMult);
+    game.zombies.push({ x: zx, y: zy, r: 16, hp, displayHp: hp, maxHp: hp, speed: spd, dmg, isBoss: false, isHard: zDiff.isHard, shielded: false, slowTimer: 0, atkCd: 0 });
+  }
+
   for (let i = game.zombies.length - 1; i >= 0; i--) {
     const z = game.zombies[i];
     z.displayHp = lerp(z.displayHp ?? z.hp, z.hp, hpLerp);
     if (z.slowTimer > 0) z.slowTimer = Math.max(0, z.slowTimer - dt);
     if (z.atkCd > 0) z.atkCd = Math.max(0, z.atkCd - dt);
-    const dBlue = Math.hypot(BLUE_CORE_POS.x - z.x, BLUE_CORE_POS.y - z.y), dRed = Math.hypot(RED_CORE_POS.x - z.x, RED_CORE_POS.y - z.y);
-    const targetCore = dBlue <= dRed ? game.cores.blue : game.cores.red;
-    const ang = Math.atan2(targetCore.y - z.y, targetCore.x - z.x), spd = z.speed * (z.slowTimer > 0 ? 0.45 : 1) * dt;
+
+    // Cari sasaran: Jika mana-mana Teras sudah rosak (0 HP), Zombs kejar Player & AI Player terdekat!
+    let targetObj = null;
+    let chaseTank = null;
+
+    if (anyCoreDestroyed) {
+      let bestTankDist = Infinity;
+      for (const t of game.tanks) {
+        if (t.hp > 0) {
+          const d = Math.hypot(t.x - z.x, t.y - z.y);
+          if (d < bestTankDist) { bestTankDist = d; chaseTank = t; }
+        }
+      }
+      targetObj = chaseTank;
+    }
+
+    // Jika tiada Teras rosak (atau semua tangki sedang respawn), serang Teras yang masih hidup
+    if (!targetObj) {
+      const aliveCores = [];
+      if (game.cores.blue.hp > 0) aliveCores.push(game.cores.blue);
+      if (game.cores.red.hp > 0) aliveCores.push(game.cores.red);
+      if (aliveCores.length === 2) {
+        const dBlue = Math.hypot(BLUE_CORE_POS.x - z.x, BLUE_CORE_POS.y - z.y);
+        const dRed = Math.hypot(RED_CORE_POS.x - z.x, RED_CORE_POS.y - z.y);
+        targetObj = dBlue <= dRed ? game.cores.blue : game.cores.red;
+      } else if (aliveCores.length === 1) {
+        targetObj = aliveCores[0];
+      } else {
+        targetObj = game.tanks.find(t => t.hp > 0) || game.cores.blue;
+      }
+    }
+
+    const ang = Math.atan2(targetObj.y - z.y, targetObj.x - z.x);
+    const rageBoost = (anyCoreDestroyed && chaseTank) ? 1.15 : 1.0;
+    const spd = z.speed * rageBoost * (z.slowTimer > 0 ? 0.45 : 1) * dt;
     const nx = z.x + Math.cos(ang) * spd, ny = z.y + Math.sin(ang) * spd;
+
     const hitB = game.buildings.find(b => Math.hypot(b.x - nx, b.y - ny) < z.r + b.r);
     if (hitB) {
       if (z.atkCd <= 0) {
@@ -1748,11 +1840,36 @@ function update(dt = 1) {
         if (hitB.hp <= 0) { playExplosionSfx(false); spawnParticles(hitB.x, hitB.y, hitB.color, 12); removeBuildingFromRoom(hitB); game.buildings = game.buildings.filter(item => item !== hitB); }
         else syncBuildingToRoom(hitB);
       }
-    } else { z.x = nx; z.y = ny; }
-    if (Math.hypot(z.x - targetCore.x, z.y - targetCore.y) < z.r + 38 && z.atkCd <= 0) {
-      z.atkCd = 40; targetCore.hp = Math.max(0, targetCore.hp - (z.isBoss ? 12 : 4));
-      syncCoreHpToRoom(targetCore.team); checkCoreEliminationVictory();
-      if (game.over) return;
+    } else {
+      z.x = nx; z.y = ny;
+    }
+
+    // Serang semua tangki (Player & AI Player) jika bersentuhan
+    for (const t of game.tanks) {
+      if (t.hp > 0 && Math.hypot(z.x - t.x, z.y - t.y) < z.r + t.r + 3) {
+        if (z.atkCd <= 0) {
+          z.atkCd = 34;
+          if (!t.shieldTimer || t.shieldTimer <= 0) {
+            t.hp = Math.max(0, t.hp - z.dmg);
+            spawnParticles(t.x, t.y, '#fb7185', 6);
+            if (t.isPlayer) addFloatText(t.x, t.y - 26, `-${z.dmg} HP!`, '#fb7185');
+            if (t.hp <= 0) {
+              playExplosionSfx(false);
+              spawnParticles(t.x, t.y, t.team === 'blue' ? '#38bdf8' : '#fb7185', 16);
+              if (t.isPlayer) showBanner('💀 Tangki anda dimusnahkan oleh Zombs! Respawn di kubu...', '#fb7185');
+            }
+          }
+        }
+      }
+    }
+
+    // Serang Teras jika sasaran adalah Teras
+    if ((targetObj === game.cores.blue || targetObj === game.cores.red) && targetObj.hp > 0) {
+      if (Math.hypot(z.x - targetObj.x, z.y - targetObj.y) < z.r + 38 && z.atkCd <= 0) {
+        z.atkCd = 40; targetObj.hp = Math.max(0, targetObj.hp - (z.isBoss ? 12 : 4));
+        syncCoreHpToRoom(targetObj.team); checkCoreEliminationVictory();
+        if (game.over) return;
+      }
     }
   }
   for (let i = game.bullets.length - 1; i >= 0; i--) {
@@ -1883,11 +2000,11 @@ function evaluateFullDominationAndCoreVictory(sourceTrigger = 'combat') {
     if (redCoreDestroyed && !blueCapturedAll) {
       game.coreDestroyedAnnounced = 'red';
       playExplosionSfx(true);
-      showBanner('💥 TERAS MERAH HANCUR! Sekarang tawan semua 4 Capture Point untuk menang!', '#38bdf8');
+      showBanner('💥 TERAS MERAH HANCUR! ⚠️ Zombs kini memburu semua Pemain & AI! Tawan 4 Orb untuk menang!', '#38bdf8');
     } else if (blueCoreDestroyed && !redCapturedAll) {
       game.coreDestroyedAnnounced = 'blue';
       playExplosionSfx(true);
-      showBanner('💥 TERAS BIRU HANCUR! Sekarang tawan semua 4 Capture Point untuk menang!', '#fb7185');
+      showBanner('💥 TERAS BIRU HANCUR! ⚠️ Zombs kini memburu semua Pemain & AI! Tawan 4 Orb untuk menang!', '#fb7185');
     }
   }
 
@@ -2017,10 +2134,17 @@ function draw() {
     drawHpBar(b.x, b.y + b.r + 4, 34, b.displayHp ?? b.hp, b.maxHp, teamRing);
   });
   game.zombies.forEach(z => {
+    if (z.isHard) {
+      ctx.beginPath(); ctx.arc(z.x, z.y, z.r + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#fb7185'; ctx.lineWidth = 2.2; ctx.stroke();
+    }
     if (z.shielded) { ctx.beginPath(); ctx.arc(z.x, z.y, z.r + 9 + Math.sin(game.animTime * 2) * 1.5, 0, Math.PI * 2); ctx.strokeStyle = '#facc15'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]); }
-    ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2); ctx.fillStyle = z.slowTimer > 0 ? '#38bdf8' : (z.isBoss ? '#a855f7' : '#22c55e'); ctx.fill();
-    ctx.font = z.isBoss ? '24px sans-serif' : '16px sans-serif'; ctx.fillText(z.isBoss ? '👹' : '🧟', z.x, z.y);
-    drawHpBar(z.x, z.y + z.r + 4, z.isBoss ? 48 : 26, z.displayHp ?? z.hp, z.maxHp, z.shielded ? '#facc15' : '#4ade80');
+    ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+    ctx.fillStyle = z.slowTimer > 0 ? '#38bdf8' : (z.isBoss ? '#a855f7' : (z.isHard ? '#dc2626' : '#22c55e'));
+    ctx.fill();
+    ctx.font = z.isBoss ? '24px sans-serif' : '16px sans-serif';
+    ctx.fillText(z.isBoss ? '👹' : (z.isHard ? '💀' : '🧟'), z.x, z.y);
+    drawHpBar(z.x, z.y + z.r + 4, z.isBoss ? 48 : 26, z.displayHp ?? z.hp, z.maxHp, z.shielded ? '#facc15' : (z.isHard ? '#fb7185' : '#4ade80'));
   });
   game.tanks.forEach(t => {
     if (t.hp <= 0) return;
