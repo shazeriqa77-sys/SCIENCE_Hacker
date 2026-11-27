@@ -349,7 +349,7 @@
     <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; background:#1e293b; padding:8px 10px; border-radius:10px; border:1px solid #334155;">
       <button type="button" class="util-btn on" onclick="googleSignIn()">🔐 Sign In dengan Google</button>
       <button type="button" class="util-btn" onclick="quickSignIn()">🪪 Sign In ID Murid</button>
-      <a href="login.html?next=zombs_arras_omega_dominati.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
+      <a href="login.html?next=zombs_arras_omega_domination.html" class="util-btn" style="text-decoration:none; display:inline-flex; align-items:center;">🚪 Buka Halaman Login</a>
       <span id="authStatusText" style="font-size:11px; color:#86efac; font-weight:700;">🟢 Mod Arena Sedia (Boleh terus main!)</span>
     </div>
 
@@ -1106,33 +1106,42 @@ function applyCleanResetState(profileOverride = null, roundNum = 1, syncCloud = 
     ]
   };
 
+  const allyRoles = ['siege', 'orb'];
+  const allyRoleTags = { siege: 'Siege', orb: 'Orb' };
   for (let i = 0; i < 2; i++) {
+    const role = allyRoles[i];
     game.tanks.push({
       id: 'ally_' + i,
-      name: `Rakan ${chosenTeam === 'red' ? 'Merah' : 'Biru'}-${i + 1}`,
+      role,
+      name: `Rakan ${chosenTeam === 'red' ? 'Merah' : 'Biru'} [${allyRoleTags[role]}]`,
       team: chosenTeam,
-      aura: '#94a3b8',
+      aura: role === 'orb' ? '#facc15' : '#38bdf8',
       isBot: true,
       x: myBase.x + (i === 0 ? -40 : 40),
       y: myBase.y + (i === 0 ? -95 : 95),
       vx: 0, vy: 0, r: 19, angle: 0,
-      hp: 130, displayHp: 130, maxHp: 130,
-      xp: 0, lvl: 1, tankClass: 'Twin', cd: 0, speed: 3.1, respawn: 0, recoils: []
+      hp: 135, displayHp: 135, maxHp: 135,
+      xp: 0, lvl: 1, tankClass: role === 'siege' ? 'Twin' : 'FlankGuard', cd: 0, speed: 3.15, respawn: 0, recoils: []
     });
   }
 
+  const enemyRoles = ['orb', 'siege', 'interceptor'];
+  const enemyRoleTags = { orb: 'Orb', siege: 'Teras', interceptor: 'Pemintas' };
+  const enemyClasses = { orb: 'FlankGuard', siege: 'MachineGun', interceptor: 'Sniper' };
   for (let i = 0; i < 3; i++) {
+    const role = enemyRoles[i];
     game.tanks.push({
       id: 'enemy_' + i,
-      name: `Lawan ${enemyTeam === 'red' ? 'Merah' : 'Biru'}-${i + 1}`,
+      role,
+      name: `Lawan ${enemyTeam === 'red' ? 'Merah' : 'Biru'} [${enemyRoleTags[role]}]`,
       team: enemyTeam,
-      aura: '#94a3b8',
+      aura: role === 'orb' ? '#facc15' : (role === 'interceptor' ? '#c084fc' : '#fb7185'),
       isBot: true,
       x: enemyBase.x + (i - 1) * 65,
       y: enemyBase.y + (i - 1) * 90,
       vx: 0, vy: 0, r: 19, angle: 0,
-      hp: 130, displayHp: 130, maxHp: 130,
-      xp: 0, lvl: 2, tankClass: i % 2 === 0 ? 'Twin' : 'MachineGun', cd: 0, speed: 2.95, respawn: 0, recoils: []
+      hp: 140, displayHp: 140, maxHp: 140,
+      xp: 0, lvl: 2, tankClass: enemyClasses[role], cd: 0, speed: role === 'interceptor' ? 3.2 : 3.0, respawn: 0, recoils: []
     });
   }
 
@@ -1732,20 +1741,87 @@ function update(dt = 1) {
       const target = findNearestHostile(t.x, t.y, t.team, 460);
       if (target) { t.angle = lerpAngle(t.angle, Math.atan2(target.y - t.y, target.x - t.x), smoothFactor(0.22, dt)); fireTank(t, false); }
     } else if (t.isBot) {
-      const targetEnemyCore = t.team === 'blue' ? game.cores.red : game.cores.blue;
-      const enemyCoreAlive = targetEnemyCore.hp > 0;
-      const uncapturedOrb = game.dominators.find(d => d.owner !== t.team);
-      const closeThreat = findNearestHostile(t.x, t.y, t.team, 240);
-      let goal = enemyCoreAlive
-        ? (closeThreat || targetEnemyCore)
-        : (uncapturedOrb || closeThreat || targetEnemyCore);
-      const stopDist = (goal === targetEnemyCore) ? 145 : 165;
+      const myTeam = t.team;
+      const oppTeam = myTeam === 'blue' ? 'red' : 'blue';
+      const myTeamCore = myTeam === 'blue' ? game.cores.blue : game.cores.red;
+      const oppTeamCore = oppTeam === 'blue' ? game.cores.blue : game.cores.red;
+
+      // Kira status Orb semasa
+      const oppOwnedOrbs = game.dominators.filter(d => d.owner === oppTeam);
+      const notMyOrbs = game.dominators.filter(d => d.owner !== myTeam);
+
+      // Helper pilih Orb terdekat dari senarai
+      const pickNearestOrb = (list) => {
+        if (!list || list.length === 0) return null;
+        return list.reduce((best, d) =>
+          Math.hypot(d.x - t.x, d.y - t.y) < Math.hypot(best.x - t.x, best.y - t.y) ? d : best
+        , list[0]);
+      };
+
+      // MOD KECEMASAN (ANTI-WIN OVERRIDE):
+      // Jika Teras pasukan ini dah rosak (0 HP) DAN pihak lawan sudah tawan >= 2 Orb (hampir menang!),
+      // semua bot tinggalkan tugas lain dan fokus 100% rampas semula Orb lawan / kawal Orb terakhir!
+      const isEmergencyAntiWin = (myTeamCore.hp <= 0 && oppOwnedOrbs.length >= 2) || (oppOwnedOrbs.length >= 3);
+
+      let goal = null;
+      let stopDist = 155;
+
+      if (isEmergencyAntiWin) {
+        if (!t.emergencyAlerted && myTeam !== game.myTeam) {
+          t.emergencyAlerted = true;
+          showBanner(`⚠️ SKUAD LAWAN MOD KECEMASAN! Mereka fokus berkumpul merampas Orb!`, '#fb7185');
+        }
+        const priorityOrb = pickNearestOrb(oppOwnedOrbs) || pickNearestOrb(notMyOrbs);
+        const orbDefenderThreat = priorityOrb ? findNearestHostile(priorityOrb.x, priorityOrb.y, myTeam, 210) : null;
+        goal = orbDefenderThreat || priorityOrb || oppTeamCore;
+        stopDist = (goal === priorityOrb) ? 125 : 150;
+      } else {
+        t.emergencyAlerted = false;
+        const role = t.role || 'siege';
+
+        if (role === 'orb') {
+          // PERANAN 1: PENGUASA ORB — bergerak awal kawal & tawan 4 Orb
+          const targetOrb = pickNearestOrb(notMyOrbs);
+          const closeThreat = findNearestHostile(t.x, t.y, myTeam, 220);
+          goal = closeThreat || targetOrb || oppTeamCore;
+          stopDist = (goal === targetOrb) ? 130 : 160;
+        } else if (role === 'interceptor') {
+          // PERANAN 2: PENGHALANG / PEMINTAS — buru pemain lawan & musnahkan kubu/lombong supaya lawan sukar menang
+          let nearestEnemyTank = null;
+          let bestTankD = Infinity;
+          for (const other of game.tanks) {
+            if (other.hp > 0 && other.team === oppTeam) {
+              const d = Math.hypot(other.x - t.x, other.y - t.y);
+              if (d < bestTankD) { bestTankD = d; nearestEnemyTank = other; }
+            }
+          }
+          const enemyBld = game.buildings.find(b => b.team === oppTeam);
+          const fallbackOrb = pickNearestOrb(notMyOrbs);
+          goal = nearestEnemyTank || enemyBld || fallbackOrb || oppTeamCore;
+          stopDist = nearestEnemyTank ? 175 : 145;
+        } else {
+          // PERANAN 3: PENYERANG TERAS (SIEGE) — fokus tembak kubu & Teras lawan sehingga hancur
+          const closeThreat = findNearestHostile(t.x, t.y, myTeam, 200);
+          if (oppTeamCore.hp > 0) {
+            goal = closeThreat || oppTeamCore;
+            stopDist = (goal === oppTeamCore) ? 145 : 165;
+          } else {
+            // Sebaik Teras lawan hancur, terus bantu tawan baki Orb untuk menang!
+            const targetOrb = pickNearestOrb(notMyOrbs);
+            goal = targetOrb || closeThreat || oppTeamCore;
+            stopDist = 135;
+          }
+        }
+      }
+
       const dist = Math.hypot(goal.x - t.x, goal.y - t.y);
-      t.angle = lerpAngle(t.angle, Math.atan2(goal.y - t.y, goal.x - t.x), smoothFactor(0.18, dt));
-      const tvx = dist > stopDist ? Math.cos(t.angle) * t.speed : 0, tvy = dist > stopDist ? Math.sin(t.angle) * t.speed : 0;
+      t.angle = lerpAngle(t.angle, Math.atan2(goal.y - t.y, goal.x - t.x), smoothFactor(0.20, dt));
+      const speedBoost = isEmergencyAntiWin ? 1.12 : 1.0;
+      const tvx = dist > stopDist ? Math.cos(t.angle) * t.speed * speedBoost : 0;
+      const tvy = dist > stopDist ? Math.sin(t.angle) * t.speed * speedBoost : 0;
       t.vx = lerp(t.vx || 0, tvx, moveSmooth); t.vy = lerp(t.vy || 0, tvy, moveSmooth);
       t.x = Math.max(25, Math.min(WORLD - 25, t.x + t.vx * dt)); t.y = Math.max(25, Math.min(WORLD - 25, t.y + t.vy * dt));
-      if (dist < 430) fireTank(t, false);
+      if (dist < 460) fireTank(t, false);
     }
   });
   const remotePosLerp = smoothFactor(0.24, dt), remoteAngLerp = smoothFactor(0.28, dt);
